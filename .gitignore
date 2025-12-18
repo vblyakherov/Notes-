@@ -1,0 +1,21 @@
+# Flutter/Dart/Pub related
+.dart_tool/
+.packages
+pubspec.lock
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+.idea/
+.vscode/
+android/.gradle/
+android/app/*.keystore
+macos/Flutter/ephemeral/
+windows/runner/Debug/
+windows/runner/Release/
+**/Generated.xcconfig
+**/xcuserdata/
+**/Pods/
+
+# Misc
+*.log
+.DS_Store
