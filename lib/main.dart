@@ -14,6 +14,7 @@ class Note {
     required this.title,
     required this.body,
     required this.tags,
+    required this.updatedAt,
     this.imagePath,
     this.imageBytes,
   });
@@ -21,6 +22,7 @@ class Note {
   final String title;
   final String body;
   final List<String> tags;
+  final DateTime updatedAt;
   final String? imagePath;
   final Uint8List? imageBytes;
 }
@@ -54,17 +56,51 @@ class _NotesHomePageState extends State<NotesHomePage> {
       title: 'Первая заметка',
       body: 'Это пример текста заметки. Добавьте свои мысли, планы или идеи.',
       tags: ['пример', 'черновик'],
+      updatedAt: DateTime(2024, 1, 1),
     ),
   ];
 
-  Future<void> _openEditor() async {
+  void _sortNotes() {
+    _notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  Future<void> _openEditor({Note? note, int? index}) async {
     final Note? createdNote = await Navigator.of(context).push(
-      MaterialPageRoute(builder: (context) => const NoteEditorPage()),
+      MaterialPageRoute(builder: (context) => NoteEditorPage(note: note)),
     );
 
     if (createdNote != null) {
-      setState(() => _notes.insert(0, createdNote));
+      setState(() {
+        if (index != null) {
+          _notes[index] = createdNote;
+        } else {
+          _notes.add(createdNote);
+        }
+        _sortNotes();
+      });
     }
+  }
+
+  Future<bool> _confirmDelete(Note note) async {
+    final bool? result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Удалить заметку?'),
+        content: Text('«${note.title}» будет удалена без возможности восстановления.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Отмена'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Удалить'),
+          ),
+        ],
+      ),
+    );
+
+    return result ?? false;
   }
 
   @override
@@ -79,13 +115,43 @@ class _NotesHomePageState extends State<NotesHomePage> {
               padding: const EdgeInsets.all(12),
               itemBuilder: (context, index) {
                 final note = _notes[index];
-                return NoteCard(note: note);
+                return Dismissible(
+                  key: ValueKey('${note.title}-${note.updatedAt.toIso8601String()}-$index'),
+                  background: _SwipeActionBackground(
+                    alignment: Alignment.centerLeft,
+                    color: Colors.red.shade50,
+                    icon: Icons.delete_outline,
+                    label: 'Удалить',
+                  ),
+                  secondaryBackground: _SwipeActionBackground(
+                    alignment: Alignment.centerRight,
+                    color: Colors.indigo.shade50,
+                    icon: Icons.edit_outlined,
+                    label: 'Редактировать',
+                  ),
+                  confirmDismiss: (direction) async {
+                    if (direction == DismissDirection.endToStart) {
+                      await _openEditor(note: note, index: index);
+                      return false;
+                    }
+
+                    return _confirmDelete(note);
+                  },
+                  onDismissed: (direction) {
+                    if (direction == DismissDirection.startToEnd) {
+                      setState(() {
+                        _notes.removeAt(index);
+                      });
+                    }
+                  },
+                  child: NoteCard(note: note),
+                );
               },
               separatorBuilder: (_, __) => const SizedBox(height: 8),
               itemCount: _notes.length,
             ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _openEditor,
+        onPressed: () => _openEditor(),
         child: const Icon(Icons.add),
       ),
     );
@@ -179,7 +245,9 @@ class NoteCard extends StatelessWidget {
 }
 
 class NoteEditorPage extends StatefulWidget {
-  const NoteEditorPage({super.key});
+  const NoteEditorPage({super.key, this.note});
+
+  final Note? note;
 
   @override
   State<NoteEditorPage> createState() => _NoteEditorPageState();
@@ -194,6 +262,19 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   final List<String> _tags = [];
   String? _imagePath;
   Uint8List? _imageBytes;
+
+  @override
+  void initState() {
+    super.initState();
+    final note = widget.note;
+    if (note != null) {
+      _titleController.text = note.title;
+      _bodyController.text = note.body;
+      _tags.addAll(note.tags);
+      _imagePath = note.imagePath;
+      _imageBytes = note.imageBytes;
+    }
+  }
 
   @override
   void dispose() {
@@ -242,6 +323,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
       title: _titleController.text.trim(),
       body: _bodyController.text,
       tags: List.of(_tags),
+      updatedAt: DateTime.now(),
       imagePath: _imagePath,
       imageBytes: _imageBytes,
     );
@@ -253,7 +335,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Новая заметка'),
+        title: Text(widget.note == null ? 'Новая заметка' : 'Редактирование'),
         actions: [
           IconButton(
             onPressed: _saveNote,
@@ -308,6 +390,45 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _SwipeActionBackground extends StatelessWidget {
+  const _SwipeActionBackground({
+    required this.alignment,
+    required this.color,
+    required this.icon,
+    required this.label,
+  });
+
+  final Alignment alignment;
+  final Color color;
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Theme.of(context).colorScheme.onSurfaceVariant),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
+        ],
       ),
     );
   }
