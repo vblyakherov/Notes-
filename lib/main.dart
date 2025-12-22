@@ -1,9 +1,12 @@
+import 'dart:convert';
 import 'dart:io' as io;
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
+import 'package:sqflite/sqflite.dart';
 
 void main() {
   runApp(const NotesApp());
@@ -11,6 +14,7 @@ void main() {
 
 class Note {
   const Note({
+    this.id,
     required this.title,
     required this.body,
     required this.tags,
@@ -19,12 +23,59 @@ class Note {
     this.imageBytes,
   });
 
+  final int? id;
   final String title;
   final String body;
   final List<String> tags;
   final DateTime updatedAt;
   final String? imagePath;
   final Uint8List? imageBytes;
+
+  Note copyWith({
+    int? id,
+    String? title,
+    String? body,
+    List<String>? tags,
+    DateTime? updatedAt,
+    String? imagePath,
+    Uint8List? imageBytes,
+  }) {
+    return Note(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      body: body ?? this.body,
+      tags: tags ?? this.tags,
+      updatedAt: updatedAt ?? this.updatedAt,
+      imagePath: imagePath ?? this.imagePath,
+      imageBytes: imageBytes ?? this.imageBytes,
+    );
+  }
+
+  Map<String, Object?> toMap() {
+    return {
+      'id': id,
+      'title': title,
+      'body': body,
+      'tags': jsonEncode(tags),
+      'updated_at': updatedAt.millisecondsSinceEpoch,
+      'image_path': imagePath,
+      'image_bytes': imageBytes,
+    };
+  }
+
+  static Note fromMap(Map<String, Object?> map) {
+    return Note(
+      id: map['id'] as int?,
+      title: map['title'] as String,
+      body: map['body'] as String,
+      tags: (jsonDecode(map['tags'] as String) as List<dynamic>)
+          .map((tag) => tag.toString())
+          .toList(),
+      updatedAt: DateTime.fromMillisecondsSinceEpoch(map['updated_at'] as int),
+      imagePath: map['image_path'] as String?,
+      imageBytes: map['image_bytes'] as Uint8List?,
+    );
+  }
 }
 
 class NotesApp extends StatelessWidget {
@@ -51,14 +102,28 @@ class NotesHomePage extends StatefulWidget {
 }
 
 class _NotesHomePageState extends State<NotesHomePage> {
-  final List<Note> _notes = [
-    Note(
-      title: 'Первая заметка',
-      body: 'Это пример текста заметки. Добавьте свои мысли, планы или идеи.',
-      tags: ['пример', 'черновик'],
-      updatedAt: DateTime(2024, 1, 1),
-    ),
-  ];
+  final NotesDatabase _database = NotesDatabase.instance;
+  final List<Note> _notes = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadNotes();
+  }
+
+  Future<void> _loadNotes() async {
+    final notes = await _database.fetchNotes();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _notes
+        ..clear()
+        ..addAll(notes);
+      _isLoading = false;
+    });
+  }
 
   void _sortNotes() {
     _notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
@@ -70,11 +135,19 @@ class _NotesHomePageState extends State<NotesHomePage> {
     );
 
     if (createdNote != null) {
+      final Note savedNote = createdNote.id == null
+          ? await _database.insertNote(createdNote)
+          : await _database.updateNote(createdNote);
+
+      if (!mounted) {
+        return;
+      }
+
       setState(() {
         if (index != null) {
-          _notes[index] = createdNote;
+          _notes[index] = savedNote;
         } else {
-          _notes.add(createdNote);
+          _notes.add(savedNote);
         }
         _sortNotes();
       });
@@ -103,8 +176,30 @@ class _NotesHomePageState extends State<NotesHomePage> {
     return result ?? false;
   }
 
+  Future<void> _deleteNote(Note note, int index) async {
+    if (note.id != null) {
+      await _database.deleteNote(note.id!);
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _notes.removeAt(index);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+    }
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Заметки'),
@@ -116,7 +211,7 @@ class _NotesHomePageState extends State<NotesHomePage> {
               itemBuilder: (context, index) {
                 final note = _notes[index];
                 return Dismissible(
-                  key: ValueKey('${note.title}-${note.updatedAt.toIso8601String()}-$index'),
+                  key: ValueKey(note.id ?? '${note.title}-${note.updatedAt.toIso8601String()}'),
                   background: _SwipeActionBackground(
                     alignment: Alignment.centerLeft,
                     color: Colors.red.shade50,
@@ -139,9 +234,7 @@ class _NotesHomePageState extends State<NotesHomePage> {
                   },
                   onDismissed: (direction) {
                     if (direction == DismissDirection.startToEnd) {
-                      setState(() {
-                        _notes.removeAt(index);
-                      });
+                      _deleteNote(note, index);
                     }
                   },
                   child: NoteCard(note: note),
@@ -320,6 +413,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     }
 
     final note = Note(
+      id: widget.note?.id,
       title: _titleController.text.trim(),
       body: _bodyController.text,
       tags: List.of(_tags),
@@ -567,6 +661,81 @@ class _EmptyState extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class NotesDatabase {
+  NotesDatabase._();
+
+  static final NotesDatabase instance = NotesDatabase._();
+
+  static const String _tableNotes = 'notes';
+  Database? _database;
+
+  Future<Database> get database async {
+    final existingDatabase = _database;
+    if (existingDatabase != null) {
+      return existingDatabase;
+    }
+    _database = await _openDatabase();
+    return _database!;
+  }
+
+  Future<Database> _openDatabase() async {
+    final databasesPath = await getDatabasesPath();
+    final dbPath = path.join(databasesPath, 'notes.db');
+    return openDatabase(
+      dbPath,
+      version: 1,
+      onCreate: (db, version) async {
+        await db.execute('''
+          CREATE TABLE $_tableNotes(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            tags TEXT NOT NULL,
+            updated_at INTEGER NOT NULL,
+            image_path TEXT,
+            image_bytes BLOB
+          )
+        ''');
+      },
+    );
+  }
+
+  Future<List<Note>> fetchNotes() async {
+    final db = await database;
+    final maps = await db.query(
+      _tableNotes,
+      orderBy: 'updated_at DESC',
+    );
+    return maps.map(Note.fromMap).toList();
+  }
+
+  Future<Note> insertNote(Note note) async {
+    final db = await database;
+    final id = await db.insert(_tableNotes, note.toMap());
+    return note.copyWith(id: id);
+  }
+
+  Future<Note> updateNote(Note note) async {
+    final db = await database;
+    await db.update(
+      _tableNotes,
+      note.toMap(),
+      where: 'id = ?',
+      whereArgs: [note.id],
+    );
+    return note;
+  }
+
+  Future<void> deleteNote(int id) async {
+    final db = await database;
+    await db.delete(
+      _tableNotes,
+      where: 'id = ?',
+      whereArgs: [id],
     );
   }
 }
