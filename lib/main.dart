@@ -473,6 +473,12 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 imagePath: _imagePath,
                 imageBytes: _imageBytes,
                 onPick: _pickImage,
+                onRemove: () {
+                  setState(() {
+                    _imagePath = null;
+                    _imageBytes = null;
+                  });
+                },
               ),
               const SizedBox(height: 12),
               _TagEditor(
@@ -533,43 +539,75 @@ class _ImagePickerPreview extends StatelessWidget {
     required this.imagePath,
     required this.imageBytes,
     required this.onPick,
+    required this.onRemove,
   });
 
   final String? imagePath;
   final Uint8List? imageBytes;
   final VoidCallback onPick;
+  final VoidCallback onRemove;
 
   @override
   Widget build(BuildContext context) {
+    final hasImage = imagePath != null || imageBytes != null;
+    final fileName = imagePath != null ? path.basename(imagePath!) : null;
+    final fileExists = imagePath == null ? false : io.File(imagePath!).existsSync();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             FilledButton.icon(
               onPressed: onPick,
               icon: const Icon(Icons.image_outlined),
               label: const Text('Добавить картинку'),
             ),
-            if (imagePath != null || imageBytes != null) ...[
+            if (hasImage) ...[
               const SizedBox(width: 12),
-              Text(
-                kIsWeb && imagePath == null ? 'Файл добавлен' : 'Файл: ${imagePath ?? ''}',
-                style: Theme.of(context).textTheme.bodyMedium,
+              Expanded(
+                child: Text(
+                  kIsWeb && imagePath == null ? 'Файл добавлен' : 'Файл: ${fileName ?? ''}',
+                  style: Theme.of(context).textTheme.bodyMedium,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              IconButton(
+                onPressed: onRemove,
+                tooltip: 'Удалить картинку',
+                icon: const Icon(Icons.close),
               ),
             ],
           ],
         ),
-        if (imagePath != null || imageBytes != null) ...[
+        if (hasImage) ...[
           const SizedBox(height: 12),
           ClipRRect(
             borderRadius: BorderRadius.circular(12),
-            child: kIsWeb && imageBytes != null
-                ? Image.memory(imageBytes!, height: 180, fit: BoxFit.cover)
-                : Image.file(io.File(imagePath!), height: 180, fit: BoxFit.cover),
+            child: _buildImagePreview(context, fileExists),
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildImagePreview(BuildContext context, bool fileExists) {
+    if (imageBytes != null) {
+      return Image.memory(imageBytes!, height: 180, fit: BoxFit.cover);
+    }
+
+    if (imagePath != null && fileExists) {
+      return Image.file(io.File(imagePath!), height: 180, fit: BoxFit.cover);
+    }
+
+    return Container(
+      height: 180,
+      color: Theme.of(context).colorScheme.surfaceVariant,
+      alignment: Alignment.center,
+      child: Text(
+        'Файл недоступен',
+        style: Theme.of(context).textTheme.bodyMedium,
+      ),
     );
   }
 }
