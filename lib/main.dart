@@ -104,12 +104,33 @@ class NotesHomePage extends StatefulWidget {
 class _NotesHomePageState extends State<NotesHomePage> {
   final NotesDatabase _database = NotesDatabase.instance;
   final List<Note> _notes = [];
+  final TextEditingController _searchController = TextEditingController();
   bool _isLoading = true;
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_handleSearchChange);
     _loadNotes();
+  }
+
+  @override
+  void dispose() {
+    _searchController
+      ..removeListener(_handleSearchChange)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _handleSearchChange() {
+    final query = _searchController.text.trim();
+    if (query == _searchQuery) {
+      return;
+    }
+    setState(() {
+      _searchQuery = query;
+    });
   }
 
   Future<void> _loadNotes() async {
@@ -127,6 +148,19 @@ class _NotesHomePageState extends State<NotesHomePage> {
 
   void _sortNotes() {
     _notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  List<Note> get _filteredNotes {
+    if (_searchQuery.isEmpty) {
+      return _notes;
+    }
+    final query = _searchQuery.toLowerCase();
+    return _notes.where((note) {
+      final matchesTitle = note.title.toLowerCase().contains(query);
+      final matchesBody = note.body.toLowerCase().contains(query);
+      final matchesTags = note.tags.any((tag) => tag.toLowerCase().contains(query));
+      return matchesTitle || matchesBody || matchesTags;
+    }).toList();
   }
 
   Future<void> _openEditor({Note? note, int? index}) async {
@@ -204,45 +238,109 @@ class _NotesHomePageState extends State<NotesHomePage> {
       appBar: AppBar(
         title: const Text('Заметки'),
       ),
-      body: _notes.isEmpty
-          ? const _EmptyState()
-          : ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemBuilder: (context, index) {
-                final note = _notes[index];
-                return Dismissible(
-                  key: ValueKey(note.id ?? '${note.title}-${note.updatedAt.toIso8601String()}'),
-                  background: _SwipeActionBackground(
-                    alignment: Alignment.centerLeft,
-                    color: Colors.red.shade50,
-                    icon: Icons.delete_outline,
-                    label: 'Удалить',
-                  ),
-                  secondaryBackground: _SwipeActionBackground(
-                    alignment: Alignment.centerRight,
-                    color: Colors.indigo.shade50,
-                    icon: Icons.edit_outlined,
-                    label: 'Редактировать',
-                  ),
-                  confirmDismiss: (direction) async {
-                    if (direction == DismissDirection.endToStart) {
-                      await _openEditor(note: note, index: index);
-                      return false;
-                    }
-
-                    return _confirmDelete(note);
-                  },
-                  onDismissed: (direction) {
-                    if (direction == DismissDirection.startToEnd) {
-                      _deleteNote(note, index);
-                    }
-                  },
-                  child: NoteCard(note: note),
-                );
-              },
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemCount: _notes.length,
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Поиск по заметкам',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _searchQuery.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () => _searchController.clear(),
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Очистить поиск',
+                      ),
+                border: const OutlineInputBorder(),
+              ),
             ),
+          ),
+          Expanded(
+            child: _notes.isEmpty
+                ? const _EmptyState(
+                    title: 'Пока нет заметок',
+                    description:
+                        'Создайте первую заметку, добавьте заголовок, текст, картинку и хештеги.',
+                  )
+                : _filteredNotes.isEmpty
+                    ? const _EmptyState(
+                        title: 'Ничего не найдено',
+                        description: 'Попробуйте изменить запрос поиска.',
+                        icon: Icons.search_off,
+                      )
+                    : LayoutBuilder(
+                        builder: (context, constraints) {
+                          final width = constraints.maxWidth;
+                          final crossAxisCount = width >= 900
+                              ? 4
+                              : width >= 600
+                                  ? 3
+                                  : 2;
+                          return GridView.builder(
+                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                            itemCount: _filteredNotes.length,
+                            gridDelegate:
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: crossAxisCount,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              mainAxisExtent: 190,
+                            ),
+                            itemBuilder: (context, index) {
+                              final note = _filteredNotes[index];
+                              return Dismissible(
+                                key: ValueKey(
+                                  note.id ??
+                                      '${note.title}-${note.updatedAt.toIso8601String()}',
+                                ),
+                                background: _SwipeActionBackground(
+                                  alignment: Alignment.centerLeft,
+                                  color: Colors.red.shade50,
+                                  icon: Icons.delete_outline,
+                                  label: 'Удалить',
+                                ),
+                                secondaryBackground: _SwipeActionBackground(
+                                  alignment: Alignment.centerRight,
+                                  color: Colors.indigo.shade50,
+                                  icon: Icons.edit_outlined,
+                                  label: 'Редактировать',
+                                ),
+                                confirmDismiss: (direction) async {
+                                  if (direction == DismissDirection.endToStart) {
+                                    final noteIndex = _notes.indexWhere(
+                                      (item) => item.id == note.id,
+                                    );
+                                    await _openEditor(
+                                      note: note,
+                                      index: noteIndex == -1 ? null : noteIndex,
+                                    );
+                                    return false;
+                                  }
+
+                                  return _confirmDelete(note);
+                                },
+                                onDismissed: (direction) {
+                                  if (direction == DismissDirection.startToEnd) {
+                                    final noteIndex = _notes.indexWhere(
+                                      (item) => item.id == note.id,
+                                    );
+                                    if (noteIndex != -1) {
+                                      _deleteNote(note, noteIndex);
+                                    }
+                                  }
+                                },
+                                child: NoteCard(note: note),
+                              );
+                            },
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openEditor(),
         child: const Icon(Icons.add),
@@ -262,7 +360,7 @@ class NoteCard extends StatelessWidget {
       elevation: 0,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(10),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -275,9 +373,11 @@ class NoteCard extends StatelessWidget {
                     children: [
                       Text(
                         note.title,
-                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleSmall,
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         note.body,
                         maxLines: 2,
@@ -288,7 +388,7 @@ class NoteCard extends StatelessWidget {
                   ),
                 ),
                 if (note.imagePath != null || note.imageBytes != null) ...[
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
                     child: _buildPreviewThumbnail(),
@@ -297,7 +397,7 @@ class NoteCard extends StatelessWidget {
               ],
             ),
             if (note.tags.isNotEmpty) ...[
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Wrap(
                 spacing: 6,
                 runSpacing: -4,
@@ -322,16 +422,16 @@ class NoteCard extends StatelessWidget {
     if (note.imageBytes != null) {
       return Image.memory(
         note.imageBytes!,
-        height: 64,
-        width: 64,
+        height: 52,
+        width: 52,
         fit: BoxFit.cover,
       );
     }
 
     return Image.file(
       io.File(note.imagePath!),
-      height: 64,
-      width: 64,
+      height: 52,
+      width: 52,
       fit: BoxFit.cover,
     );
   }
@@ -672,7 +772,15 @@ class _TagEditor extends StatelessWidget {
 }
 
 class _EmptyState extends StatelessWidget {
-  const _EmptyState();
+  const _EmptyState({
+    required this.title,
+    required this.description,
+    this.icon = Icons.note_add,
+  });
+
+  final String title;
+  final String description;
+  final IconData icon;
 
   @override
   Widget build(BuildContext context) {
@@ -682,15 +790,15 @@ class _EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.note_add, size: 72, color: Colors.grey.shade400),
+            Icon(icon, size: 72, color: Colors.grey.shade400),
             const SizedBox(height: 12),
             Text(
-              'Пока нет заметок',
+              title,
               style: Theme.of(context).textTheme.titleMedium,
             ),
             const SizedBox(height: 6),
             Text(
-              'Создайте первую заметку, добавьте заголовок, текст, картинку и хештеги.',
+              description,
               textAlign: TextAlign.center,
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                     color: Colors.grey.shade600,
