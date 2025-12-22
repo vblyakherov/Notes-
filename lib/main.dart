@@ -52,7 +52,7 @@ class NotesHomePage extends StatefulWidget {
 
 class _NotesHomePageState extends State<NotesHomePage> {
   final List<Note> _notes = [
-    const Note(
+    Note(
       title: 'Первая заметка',
       body: 'Это пример текста заметки. Добавьте свои мысли, планы или идеи.',
       tags: ['пример', 'черновик'],
