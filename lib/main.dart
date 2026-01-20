@@ -83,11 +83,48 @@ class NotesApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = ColorScheme.fromSeed(seedColor: const Color(0xFF7AA65A));
     return MaterialApp(
       title: 'Notes',
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
+        colorScheme: colorScheme,
         useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF6F7F3),
+        appBarTheme: AppBarTheme(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          elevation: 0,
+          titleTextStyle: const TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.2,
+          ),
+        ),
+        cardTheme: CardTheme(
+          color: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+        ),
+        floatingActionButtonTheme: FloatingActionButtonThemeData(
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide(color: Colors.grey.shade200),
+          ),
+        ),
       ),
       home: const NotesHomePage(),
     );
@@ -148,6 +185,15 @@ class _NotesHomePageState extends State<NotesHomePage> {
 
   void _sortNotes() {
     _notes.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+  }
+
+  void _showNotImplemented(BuildContext context, String label) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$label пока недоступно'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   List<Note> get _filteredNotes {
@@ -234,116 +280,163 @@ class _NotesHomePageState extends State<NotesHomePage> {
       );
     }
 
+    final colorScheme = Theme.of(context).colorScheme;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Заметки'),
-      ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Поиск по заметкам',
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: _searchQuery.isEmpty
-                    ? null
-                    : IconButton(
-                        onPressed: () => _searchController.clear(),
-                        icon: const Icon(Icons.close),
-                        tooltip: 'Очистить поиск',
-                      ),
-                border: const OutlineInputBorder(),
-              ),
-            ),
+        title: const Text('My Notes'),
+        flexibleSpace: const _AppBarGradient(),
+        actions: [
+          IconButton(
+            onPressed: () => _showNotImplemented(context, 'Новый список'),
+            icon: const Icon(Icons.list_alt_outlined),
+            tooltip: 'Новый список',
           ),
-          Expanded(
-            child: _notes.isEmpty
-                ? const _EmptyState(
-                    title: 'Пока нет заметок',
-                    description:
-                        'Создайте первую заметку, добавьте заголовок, текст, картинку и хештеги.',
-                  )
-                : _filteredNotes.isEmpty
-                    ? const _EmptyState(
-                        title: 'Ничего не найдено',
-                        description: 'Попробуйте изменить запрос поиска.',
-                        icon: Icons.search_off,
-                      )
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          final width = constraints.maxWidth;
-                          final crossAxisCount = width >= 900
-                              ? 4
-                              : width >= 600
-                                  ? 3
-                                  : 2;
-                          return GridView.builder(
-                            padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
-                            itemCount: _filteredNotes.length,
-                            gridDelegate:
-                                SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: crossAxisCount,
-                              crossAxisSpacing: 12,
-                              mainAxisSpacing: 12,
-                              mainAxisExtent: 190,
-                            ),
-                            itemBuilder: (context, index) {
-                              final note = _filteredNotes[index];
-                              return Dismissible(
-                                key: ValueKey(
-                                  note.id ??
-                                      '${note.title}-${note.updatedAt.toIso8601String()}',
-                                ),
-                                background: _SwipeActionBackground(
-                                  alignment: Alignment.centerLeft,
-                                  color: Colors.red.shade50,
-                                  icon: Icons.delete_outline,
-                                  label: 'Удалить',
-                                ),
-                                secondaryBackground: _SwipeActionBackground(
-                                  alignment: Alignment.centerRight,
-                                  color: Colors.indigo.shade50,
-                                  icon: Icons.edit_outlined,
-                                  label: 'Редактировать',
-                                ),
-                                confirmDismiss: (direction) async {
-                                  if (direction == DismissDirection.endToStart) {
-                                    final noteIndex = _notes.indexWhere(
-                                      (item) => item.id == note.id,
-                                    );
-                                    await _openEditor(
-                                      note: note,
-                                      index: noteIndex == -1 ? null : noteIndex,
-                                    );
-                                    return false;
-                                  }
-
-                                  return _confirmDelete(note);
-                                },
-                                onDismissed: (direction) {
-                                  if (direction == DismissDirection.startToEnd) {
-                                    final noteIndex = _notes.indexWhere(
-                                      (item) => item.id == note.id,
-                                    );
-                                    if (noteIndex != -1) {
-                                      _deleteNote(note, noteIndex);
-                                    }
-                                  }
-                                },
-                                child: NoteCard(note: note),
-                              );
-                            },
-                          );
-                        },
-                      ),
+          IconButton(
+            onPressed: () => _showNotImplemented(context, 'Синхронизация'),
+            icon: const Icon(Icons.sync),
+            tooltip: 'Синхронизация',
+          ),
+          IconButton(
+            onPressed: () => _showNotImplemented(context, 'Настройки'),
+            icon: const Icon(Icons.settings_outlined),
+            tooltip: 'Настройки',
           ),
         ],
       ),
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFFF9FAF7), Color(0xFFF2F4EF)],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
+        ),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _searchController,
+                      decoration: InputDecoration(
+                        hintText: 'Search notes',
+                        prefixIcon: Icon(Icons.search, color: colorScheme.primary),
+                        suffixIcon: _searchQuery.isEmpty
+                            ? null
+                            : IconButton(
+                                onPressed: () => _searchController.clear(),
+                                icon: const Icon(Icons.close),
+                                tooltip: 'Очистить поиск',
+                              ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _FilterChipButton(
+                    icon: Icons.view_module_outlined,
+                    tooltip: 'Плитка',
+                    onPressed: () => _showNotImplemented(context, 'Смена вида'),
+                  ),
+                  const SizedBox(width: 8),
+                  _FilterChipButton(
+                    icon: Icons.tune,
+                    tooltip: 'Фильтры',
+                    onPressed: () => _showNotImplemented(context, 'Фильтры'),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: _notes.isEmpty
+                  ? const _EmptyState(
+                      title: 'Пока нет заметок',
+                      description:
+                          'Создайте первую заметку, добавьте заголовок, текст, картинку и хештеги.',
+                    )
+                  : _filteredNotes.isEmpty
+                      ? const _EmptyState(
+                          title: 'Ничего не найдено',
+                          description: 'Попробуйте изменить запрос поиска.',
+                          icon: Icons.search_off,
+                        )
+                      : LayoutBuilder(
+                          builder: (context, constraints) {
+                            final width = constraints.maxWidth;
+                            final crossAxisCount = width >= 900
+                                ? 4
+                                : width >= 600
+                                    ? 3
+                                    : 2;
+                            return GridView.builder(
+                              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                              itemCount: _filteredNotes.length,
+                              gridDelegate:
+                                  SliverGridDelegateWithFixedCrossAxisCount(
+                                crossAxisCount: crossAxisCount,
+                                crossAxisSpacing: 14,
+                                mainAxisSpacing: 14,
+                                mainAxisExtent: 186,
+                              ),
+                              itemBuilder: (context, index) {
+                                final note = _filteredNotes[index];
+                                return Dismissible(
+                                  key: ValueKey(
+                                    note.id ??
+                                        '${note.title}-${note.updatedAt.toIso8601String()}',
+                                  ),
+                                  background: _SwipeActionBackground(
+                                    alignment: Alignment.centerLeft,
+                                    color: Colors.red.shade50,
+                                    icon: Icons.delete_outline,
+                                    label: 'Удалить',
+                                  ),
+                                  secondaryBackground: _SwipeActionBackground(
+                                    alignment: Alignment.centerRight,
+                                    color: colorScheme.primary.withOpacity(0.12),
+                                    icon: Icons.edit_outlined,
+                                    label: 'Редактировать',
+                                  ),
+                                  confirmDismiss: (direction) async {
+                                    if (direction == DismissDirection.endToStart) {
+                                      final noteIndex = _notes.indexWhere(
+                                        (item) => item.id == note.id,
+                                      );
+                                      await _openEditor(
+                                        note: note,
+                                        index: noteIndex == -1 ? null : noteIndex,
+                                      );
+                                      return false;
+                                    }
+
+                                    return _confirmDelete(note);
+                                  },
+                                  onDismissed: (direction) {
+                                    if (direction ==
+                                        DismissDirection.startToEnd) {
+                                      final noteIndex = _notes.indexWhere(
+                                        (item) => item.id == note.id,
+                                      );
+                                      if (noteIndex != -1) {
+                                        _deleteNote(note, noteIndex);
+                                      }
+                                    }
+                                  },
+                                  child: NoteCard(note: note),
+                                );
+                              },
+                            );
+                          },
+                        ),
+            ),
+          ],
+        ),
+      ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _openEditor(),
-        child: const Icon(Icons.add),
+        child: const Icon(Icons.add, size: 30),
       ),
     );
   }
@@ -356,11 +449,11 @@ class NoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
     return Card(
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
-        padding: const EdgeInsets.all(10),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -375,14 +468,19 @@ class NoteCard extends StatelessWidget {
                         note.title,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleSmall,
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: const Color(0xFF4B5B4C),
+                            ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         note.body,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.bodyMedium,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: Colors.grey.shade600,
+                            ),
                       ),
                     ],
                   ),
@@ -390,7 +488,7 @@ class NoteCard extends StatelessWidget {
                 if (note.imagePath != null || note.imageBytes != null) ...[
                   const SizedBox(width: 8),
                   ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     child: _buildPreviewThumbnail(),
                   ),
                 ],
@@ -405,13 +503,42 @@ class NoteCard extends StatelessWidget {
                     .map(
                       (tag) => Chip(
                         side: BorderSide.none,
+                        backgroundColor: const Color(0xFFEAF2E2),
                         label: Text('#$tag'),
+                        labelStyle: TextStyle(
+                          color: colorScheme.primary,
+                          fontWeight: FontWeight.w500,
+                        ),
                         visualDensity: VisualDensity.compact,
                       ),
                     )
                     .toList(),
               ),
             ],
+            const Spacer(),
+            Align(
+              alignment: Alignment.bottomRight,
+              child: Container(
+                height: 22,
+                width: 22,
+                decoration: BoxDecoration(
+                  color: colorScheme.primary,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: colorScheme.primary.withOpacity(0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.check,
+                  size: 14,
+                  color: colorScheme.onPrimary,
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -433,6 +560,61 @@ class NoteCard extends StatelessWidget {
       height: 52,
       width: 52,
       fit: BoxFit.cover,
+    );
+  }
+}
+
+class _FilterChipButton extends StatelessWidget {
+  const _FilterChipButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            height: 44,
+            width: 44,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.primary.withOpacity(0.15)),
+            ),
+            child: Icon(icon, color: colorScheme.primary),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AppBarGradient extends StatelessWidget {
+  const _AppBarGradient();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [Color(0xFF9CB783), Color(0xFF7AA65A)],
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+        ),
+      ),
     );
   }
 }
@@ -530,6 +712,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
     return Scaffold(
       appBar: AppBar(
         title: Text(widget.note == null ? 'Новая заметка' : 'Редактирование'),
+        flexibleSpace: const _AppBarGradient(),
         actions: [
           IconButton(
             onPressed: _saveNote,
@@ -547,8 +730,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
               TextFormField(
                 controller: _titleController,
                 decoration: const InputDecoration(
-                  labelText: 'Заголовок',
-                  border: OutlineInputBorder(),
+                  labelText: 'Title',
                 ),
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
@@ -562,9 +744,8 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 controller: _bodyController,
                 maxLines: null,
                 decoration: const InputDecoration(
-                  labelText: 'Текст',
+                  labelText: 'Text',
                   hintText: 'Можно вставлять форматированный текст — переносы строк сохранятся',
-                  border: OutlineInputBorder(),
                   alignLabelWithHint: true,
                 ),
               ),
